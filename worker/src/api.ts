@@ -1,15 +1,46 @@
 import { Hono } from "hono";
-import type { Env, IngestRecord } from "./types";
-import { checkBearer, normOib } from "./util";
+import type { CompanyRow, Env, IngestRecord } from "./types";
+import { checkBearer, extractBearer, normOib, sha256Hex } from "./util";
 import {
   countCompanies,
+  findApiKeyByHash,
   getCompany,
   listCompanies,
   summaryCounts,
+  touchApiKey,
   upsertCompany,
 } from "./db";
 
 export const api = new Hono<{ Bindings: Env }>();
+
+/** Clean, stable subset of a row for external consumers (no raw/internal blobs). */
+function publicView(r: CompanyRow) {
+  return {
+    oib: r.oib,
+    name: r.name,
+    kind: r.kind,
+    processing: r.status, // pending | enriched | failed
+    size: r.size, // mikro | mali | srednji | veliki | null
+    size_official: !!r.size_official, // true = službena FINA info.BIZ oznaka
+    confidence: r.confidence,
+    legal_status: r.legal_status, // aktivan | brisan | likvidacija | stecaj | ...
+    legal_status_raw: r.legal_status_raw,
+    employees: r.employees,
+    has_employees: r.has_employees == null ? null : !!r.has_employees,
+    total_assets_eur: r.total_assets,
+    revenue_eur: r.revenue,
+    metrics_year: r.metrics_year,
+    metrics_source: r.metrics_source,
+    nkd: r.nkd,
+    address: r.address,
+    mbs: r.mbs,
+    founded_year: r.founded_year,
+    director: r.director,
+    source_url: r.source_url,
+    updated_at: r.updated_at,
+    enriched_at: r.enriched_at,
+  };
+}
 
 // ───────────────────────── Bearer-gated write endpoints ─────────────────────────
 
@@ -129,3 +160,65 @@ api.get("/companies/:oib", async (c) => {
   if (!row) return c.json({ error: "nije pronađeno" }, 404);
   return c.json(row);
 });
+
+// ───────────────────────── v1 — vanjski API (API ključ) ─────────────────────────
+// Za potrošače poput zef.hr: predaj listu OIB-ova, dobij klasificirane podatke.
+
+const v1 = new Hono<{ Bindings: Env }>();
+const MAX_OIBS = 1000;
+
+// API-ključ auth na cijelo /v1 stablo.
+v1.use("*", async (c, next) => {
+  const raw = extractBearer(c.req.raw);
+  if (!raw) return c.json({ error: "nedostaje API ključ (Authorization: Bearer cdk_…)" }, 401);
+  const key = await findApiKeyByHash(c.env.DB, await sha256Hex(raw));
+  if (!key) return c.json({ error: "neispravan ili onemogućen API ključ" }, 401);
+  c.executionCtx.waitUntil(touchApiKey(c.env.DB, key.id));
+  await next();
+});
+
+/**
+ * POST /api/v1/companies — batch lookup po OIB-ovima.
+ * Body: { "oibs": ["...","..."], "enqueue": true }
+ *   enqueue (default true): nepoznate OIB-ove ubaci u red (status pending) da ih
+ *   buduća obrada pokupi. Vrati found:false za njih.
+ */
+v1.post("/companies", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const oibsIn: unknown[] = Array.isArray(body?.oibs) ? body.oibs : [];
+  if (oibsIn.length === 0) return c.json({ error: "očekujem { oibs: [\"...\"] }" }, 400);
+  if (oibsIn.length > MAX_OIBS) return c.json({ error: `najviše ${MAX_OIBS} OIB-ova po zahtjevu` }, 400);
+  const enqueue = body?.enqueue !== false;
+
+  const results: unknown[] = [];
+  const missing: string[] = [];
+  let found = 0;
+  for (const raw of oibsIn) {
+    const oib = normOib(raw);
+    if (!oib) {
+      results.push({ oib: String(raw), found: false, reason: "neispravan OIB" });
+      continue;
+    }
+    const row = await getCompany(c.env.DB, oib);
+    if (row) {
+      found++;
+      results.push({ found: true, ...publicView(row) });
+    } else {
+      missing.push(oib);
+      if (enqueue) await upsertCompany(c.env.DB, { oib, status: "pending" });
+      results.push({ oib, found: false, processing: enqueue ? "queued" : "unknown" });
+    }
+  }
+  return c.json({ count: results.length, found, missing, results });
+});
+
+/** GET /api/v1/companies/:oib — jedan subjekt. */
+v1.get("/companies/:oib", async (c) => {
+  const oib = normOib(c.req.param("oib"));
+  if (!oib) return c.json({ error: "neispravan OIB" }, 400);
+  const row = await getCompany(c.env.DB, oib);
+  if (!row) return c.json({ oib, found: false }, 404);
+  return c.json({ found: true, ...publicView(row) });
+});
+
+api.route("/v1", v1);

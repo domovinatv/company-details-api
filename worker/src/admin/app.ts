@@ -1,9 +1,19 @@
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
 import type { Env } from "../types";
-import { countCompanies, deleteCompany, listCompanies, requeueCompany, summaryCounts } from "../db";
+import {
+  countCompanies,
+  createApiKey,
+  deleteApiKey,
+  deleteCompany,
+  listApiKeys,
+  listCompanies,
+  requeueCompany,
+  setApiKeyEnabled,
+  summaryCounts,
+} from "../db";
 import { normOib } from "../util";
-import { renderGridPage } from "./views";
+import { renderGridPage, renderKeysPage } from "./views";
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -41,6 +51,38 @@ admin.get("/api/companies", async (c) => {
     summaryCounts(c.env.DB),
   ]);
   return c.json({ counts, companies, total, limit, offset });
+});
+
+// ───────────────────────── API ključevi ─────────────────────────
+admin.get("/keys", async (c) => {
+  const keys = await listApiKeys(c.env.DB);
+  return c.html(renderKeysPage(keys));
+});
+
+admin.post("/keys", async (c) => {
+  const form = await c.req.parseBody();
+  const name = String(form.name ?? "").trim() || "bez imena";
+  const { row, rawKey } = await createApiKey(c.env.DB, name);
+  const keys = await listApiKeys(c.env.DB);
+  return c.html(renderKeysPage(keys, { rawKey, name: row.name }));
+});
+
+admin.post("/keys/:id/:action", async (c) => {
+  const id = c.req.param("id");
+  switch (c.req.param("action")) {
+    case "enable":
+      await setApiKeyEnabled(c.env.DB, id, true);
+      break;
+    case "disable":
+      await setApiKeyEnabled(c.env.DB, id, false);
+      break;
+    case "delete":
+      await deleteApiKey(c.env.DB, id);
+      break;
+    default:
+      return c.text("nepoznata akcija", 400);
+  }
+  return c.redirect("/admin/keys", 303);
 });
 
 // Akcije po subjektu (poziva ih grid preko fetch-a; Basic Auth se nasljeđuje).

@@ -20,6 +20,11 @@ app.get("/", async (c) => {
       list: "GET /api/companies?size=&status=&kind=&q=&limit=&offset=",
       detail: "GET /api/companies/:oib",
     },
+    public_v1: {
+      lookup: "POST /api/v1/companies  { oibs:[\"...\"] }  (Bearer <API ključ cdk_…>)",
+      detail: "GET /api/v1/companies/:oib  (Bearer <API ključ>)",
+      keys: "kreiraj/ugasi ključeve u /admin/keys",
+    },
     klasifikacija: "Zakon o računovodstvu (NN 85/24, čl. 5)",
     counts,
   });

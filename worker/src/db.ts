@@ -1,5 +1,5 @@
-import type { CompanyRow, IngestRecord, Status } from "./types";
-import { nowSec } from "./util";
+import type { ApiKeyRow, CompanyRow, IngestRecord, Status } from "./types";
+import { genApiKey, newId, nowSec, sha256Hex } from "./util";
 
 export interface ListFilter {
   limit?: number;
@@ -204,4 +204,50 @@ export async function requeueCompany(db: D1Database, oib: string): Promise<void>
     .prepare("UPDATE companies SET status='pending', updated_at=? WHERE oib=?")
     .bind(nowSec(), oib)
     .run();
+}
+
+// ───────────────────────── API ključevi ─────────────────────────
+
+/** Create a key. Returns the row plus the RAW key (shown to the admin once). */
+export async function createApiKey(
+  db: D1Database,
+  name: string,
+): Promise<{ row: ApiKeyRow; rawKey: string }> {
+  const rawKey = genApiKey();
+  const keyHash = await sha256Hex(rawKey);
+  const now = nowSec();
+  const id = newId();
+  await db
+    .prepare("INSERT INTO api_keys (id, name, key_hash, enabled, calls, created_at) VALUES (?,?,?,1,0,?)")
+    .bind(id, name, keyHash, now)
+    .run();
+  return { row: { id, name, key_hash: keyHash, enabled: 1, calls: 0, created_at: now, last_used_at: null }, rawKey };
+}
+
+export async function listApiKeys(db: D1Database): Promise<ApiKeyRow[]> {
+  const { results } = await db.prepare("SELECT * FROM api_keys ORDER BY created_at DESC").all<ApiKeyRow>();
+  return results ?? [];
+}
+
+/** Look up an enabled key by the SHA-256 of the presented raw key. */
+export async function findApiKeyByHash(db: D1Database, keyHash: string): Promise<ApiKeyRow | null> {
+  return db
+    .prepare("SELECT * FROM api_keys WHERE key_hash = ? AND enabled = 1")
+    .bind(keyHash)
+    .first<ApiKeyRow>();
+}
+
+export async function touchApiKey(db: D1Database, id: string): Promise<void> {
+  await db
+    .prepare("UPDATE api_keys SET calls = calls + 1, last_used_at = ? WHERE id = ?")
+    .bind(nowSec(), id)
+    .run();
+}
+
+export async function setApiKeyEnabled(db: D1Database, id: string, enabled: boolean): Promise<void> {
+  await db.prepare("UPDATE api_keys SET enabled = ? WHERE id = ?").bind(enabled ? 1 : 0, id).run();
+}
+
+export async function deleteApiKey(db: D1Database, id: string): Promise<void> {
+  await db.prepare("DELETE FROM api_keys WHERE id = ?").bind(id).run();
 }

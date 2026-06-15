@@ -99,7 +99,9 @@ telefon, IBAN…) se **ignoriraju i ne napuštaju stroj**.
 | `POST` | `/api/ingest` | Bearer `INGEST_KEY` | batch upsert razvrstanih zapisa (bridge) |
 | `GET`  | `/api/companies` | — | `?size=&status=&kind=&q=&limit=&offset=` |
 | `GET`  | `/api/companies/:oib` | — | jedan subjekt |
-| `GET`  | `/admin` | Basic Auth | grid |
+| `POST` | `/api/v1/companies` | Bearer `cdk_…` | **vanjski API**: predaj `{oibs:[…]}` → klasificirani podaci ([`docs/05-api.md`](docs/05-api.md)) |
+| `GET`  | `/api/v1/companies/:oib` | Bearer `cdk_…` | vanjski API: jedan subjekt |
+| `GET`  | `/admin` · `/admin/keys` | Basic Auth | grid + upravljanje API ključevima |
 
 ## Deploy na Cloudflare — UŽIVO
 

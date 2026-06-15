@@ -107,6 +107,9 @@ tbody tr:hover{background:var(--surface);}
 footer{padding:1.5rem;text-align:center;color:var(--muted);font-size:.8rem;}
 </style>`;
 
+import type { ApiKeyRow } from "../types";
+import { escapeHtml } from "../util";
+
 export function layout(title: string, body: string): string {
   return `<!doctype html><html lang="hr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -124,7 +127,7 @@ export function layout(title: string, body: string): string {
 /** The grid page shell. Rows are fetched client-side from /admin/api/companies. */
 export function renderGridPage(): string {
   const body = `
-<h1>Pravne osobe</h1>
+<h1>Pravne osobe <a href="/admin/keys" style="font-size:.8rem;font-weight:600;margin-left:1rem">API ključevi →</a></h1>
 <p class="lede">Grid svih subjekata s popisa. Veličina (mikro/mali/srednji/veliki) izračunata iz FINA RGFI bilance ili broja zaposlenih; udruge se ne razvrstavaju nego prati broj zaposlenih.</p>
 
 <div class="stats" id="stats"></div>
@@ -251,4 +254,49 @@ load();
 setInterval(load, 15000); // auto-refresh dok bridge obrađuje
 </script>`;
   return layout("DOMOVINA.firme — admin", body);
+}
+
+/** API-key management page. `flash` shows a freshly created raw key once. */
+export function renderKeysPage(keys: ApiKeyRow[], flash?: { rawKey: string; name: string }): string {
+  const fmtDate = (s: number | null) =>
+    s == null ? "—" : new Date(s * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const flashHtml = flash
+    ? `<div class="addbox" style="border-color:#BFE3CC;background:#E0F1E5">
+         <strong>Ključ za „${escapeHtml(flash.name)}" kreiran.</strong> Kopiraj ga sada — neće se više prikazati:
+         <div class="mono" style="margin-top:.5rem;padding:.6rem;background:#fff;border:1px solid var(--border);border-radius:.4rem;word-break:break-all">${escapeHtml(flash.rawKey)}</div>
+       </div>`
+    : "";
+  const rows = keys.length
+    ? keys
+        .map(
+          (k) => `<tr>
+        <td>${escapeHtml(k.name)}</td>
+        <td>${k.enabled ? '<span class="lst aktivan">aktivan</span>' : '<span class="lst brisan">onemogućen</span>'}</td>
+        <td class="num">${k.calls}</td>
+        <td class="dim">${fmtDate(k.last_used_at)}</td>
+        <td class="dim">${fmtDate(k.created_at)}</td>
+        <td>
+          <form method="post" action="/admin/keys/${k.id}/${k.enabled ? "disable" : "enable"}" style="display:inline"><button class="act">${k.enabled ? "Onemogući" : "Omogući"}</button></form>
+          <form method="post" action="/admin/keys/${k.id}/delete" style="display:inline" onsubmit="return confirm('Trajno obrisati ključ?')"><button class="act del">Obriši</button></form>
+        </td>
+      </tr>`,
+        )
+        .join("")
+    : '<tr><td colspan="6" class="empty">Nema ključeva.</td></tr>';
+
+  const body = `
+<h1>API ključevi <a href="/admin" style="font-size:.8rem;font-weight:600;margin-left:1rem">← grid</a></h1>
+<p class="lede">Ključevi za vanjske potrošače (npr. zef.hr) koji čitaju kroz <span class="mono">/api/v1/companies</span>. Sirovi ključ se pokaže samo jednom pri kreiranju (čuva se SHA-256 hash).</p>
+${flashHtml}
+<div class="addbox">
+  <form method="post" action="/admin/keys">
+    <div class="field"><label>Naziv klijenta</label><input name="name" placeholder="npr. zef.hr" required></div>
+    <button type="submit"><span class="plus">+</span> Kreiraj ključ</button>
+  </form>
+</div>
+<div class="table-wrap"><table>
+  <thead><tr><th>Naziv</th><th>Status</th><th class="num">Poziva</th><th>Zadnji poziv</th><th>Kreiran</th><th>Akcije</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table></div>`;
+  return layout("DOMOVINA.firme — API ključevi", body);
 }

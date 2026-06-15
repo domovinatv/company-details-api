@@ -50,6 +50,16 @@ export interface CompanyRow {
   enriched_at: number | null;
 }
 
+export interface ApiKeyRow {
+  id: string;
+  name: string;
+  key_hash: string;
+  enabled: number;
+  calls: number;
+  created_at: number;
+  last_used_at: number | null;
+}
+
 /** Payload the bridge POSTs to /api/ingest (a batch of these). */
 export interface IngestRecord {
   oib: string;
