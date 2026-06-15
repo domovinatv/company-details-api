@@ -1,0 +1,25 @@
+{
+  "name": "company-details-api",
+  "version": "0.1.0",
+  "description": "Klasifikacija veličine hrvatskih poduzetnika (mikro/mali/srednji/veliki) i udruga iz javnih izvora.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "classify": "node --experimental-strip-types src/cli.ts",
+    "bridge:seed": "node --experimental-strip-types src/bridge.ts seed",
+    "bridge:enrich": "node --experimental-strip-types src/bridge.ts enrich",
+    "test": "node --experimental-strip-types --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0"
+  }
+}

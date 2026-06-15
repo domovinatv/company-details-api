@@ -1,0 +1,4 @@
+# Lokalni secrets za `wrangler dev` (gitignored). Kopiraj u .dev.vars.
+ADMIN_USER=admin
+ADMIN_PASS=promijeni-me
+INGEST_KEY=lokalni-bridge-token

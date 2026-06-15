@@ -1,0 +1,33 @@
+name = "company-details-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+account_id = "7dc7167b7e2e00923bfa7cd697df14e4"
+
+# Custom Domain (NE plain route) — wrangler na deployu SAM stvori proxied DNS
+# zapis + edge certifikat za firme.domovina.ai. Subdomain je nov (nema postojećeg
+# DNS zapisa) pa nije pod ničijim Cloudflare Access app-om → javno dostupan odmah;
+# auth radi Worker (Basic Auth /admin + Bearer /api/ingest).
+[[routes]]
+pattern = "firme.domovina.ai"
+custom_domain = true
+
+[observability]
+enabled = true
+
+# D1 — kreiraj s: wrangler d1 create company_details
+# Zalijepi database_id koji ispiše komanda (ostavi placeholder dok ne kreiraš).
+[[d1_databases]]
+binding = "DB"
+database_name = "company_details"
+database_id = "PLACEHOLDER_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+# Bazni URL ekosustava (za poveznice u admin UI-u).
+SITE_BASE = "https://domovina.ai"
+
+# Secrets — postavi s `wrangler secret put`:
+#   ADMIN_USER   # Basic Auth user za /admin grid
+#   ADMIN_PASS   # Basic Auth pass za /admin grid
+#   INGEST_KEY   # Bearer token za POST /api/ingest i POST /api/classify (lokalni bridge)

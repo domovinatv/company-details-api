@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+
+# secrets
+.env
+.dev.vars
+
+# local data — caches, inputs, outputs (never commit scraped data or credits-burning caches)
+data/cache/
+data/input/
+data/output/
+
+# macOS
+.DS_Store
+
+# wrangler / cloudflare (Phase 2)
+.wrangler/
