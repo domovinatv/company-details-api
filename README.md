@@ -101,10 +101,16 @@ telefon, IBAN…) se **ignoriraju i ne napuštaju stroj**.
 | `GET`  | `/api/companies/:oib` | — | jedan subjekt |
 | `GET`  | `/admin` | Basic Auth | grid |
 
-## Deploy na Cloudflare (Phase 2)
+## Deploy na Cloudflare — UŽIVO
 
-Predviđena poddomena: **`firme.domovina.ai`** (slobodna; custom domain u
-`worker/wrangler.toml`). Koraci u [`docs/03-deploy.md`](docs/03-deploy.md).
+Produkcija: **<https://firme.domovina.ai>** (custom domain, D1 `company_details`).
+Admin grid na `/admin` (Basic Auth). Koraci i sync postupak:
+[`docs/03-deploy.md`](docs/03-deploy.md).
+
+Prod se puni s lokalnog stroja: ili bridgeom (`WORKER_URL=https://firme.domovina.ai
+INGEST_KEY=… npm run bridge:enrich -- --all --firecrawl`) ili — robusnije, bez
+ovisnosti o DNS-u — export lokalne D1 → import u prod preko Cloudflare API-ja
+(vidi deploy docs).
 
 ## Testovi
 

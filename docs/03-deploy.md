@@ -1,11 +1,20 @@
-# Deploy na Cloudflare (Phase 2)
+# Deploy na Cloudflare — UŽIVO
 
-Cilj: javni servis na **`firme.domovina.ai`** (poddomena slobodna — provjereno
-`dig`-om, nema DNS zapisa). Worker je već konfiguriran kao *custom domain* u
-`worker/wrangler.toml`, pa wrangler na deployu sam stvori proxied DNS zapis +
-edge certifikat.
+Servis je deployan na **<https://firme.domovina.ai>** (custom domain). Worker je
+konfiguriran kao *custom domain* u `worker/wrangler.toml`, pa je wrangler na
+deployu sam stvorio proxied DNS zapis + edge certifikat.
 
 > Account: `7dc7167b7e2e00923bfa7cd697df14e4` (isti kao ostali domovina.* servisi).
+> D1: `company_details` = `edcb397a-653e-492b-a606-ae4776d4139b`.
+> Tajne: `ADMIN_USER` (=`domovina`), `ADMIN_PASS`, `INGEST_KEY` — postavljene
+> kroz `wrangler secret put`; lokalna kopija u gitignored `worker/.prod.vars`.
+
+> **Gotcha (svjež custom domain):** edge SSL certifikat se izdaje ~5–15 min;
+> dok traje, `https://firme.domovina.ai` vraća HTTP 000. Dodatno, lokalni
+> resolver zna keširati negativni DNS odgovor (NXDOMAIN) od prije nego je zapis
+> postojao, pa `curl`/Node ne razrješavaju host iako `dig` vidi IP. Zaobilazak:
+> `curl --resolve firme.domovina.ai:443:<CF-IP>` za test, a punjenje prod baze
+> ide preko Cloudflare API-ja (D1 import), ne preko custom domene.
 
 ## Koraci
 
@@ -28,16 +37,30 @@ npx wrangler secret put INGEST_KEY
 npm run deploy
 ```
 
-## Nakon deploya
+## Punjenje / sync produkcije
 
-- Admin: `https://firme.domovina.ai/admin` (Basic Auth).
-- Napuni produkciju s lokalnog stroja (bridge gađa produkciju):
+Dva načina:
 
-  ```bash
-  # iz root foldera projekta
-  WORKER_URL=https://firme.domovina.ai INGEST_KEY=<prod-key> npm run bridge:seed -- --all
-  WORKER_URL=https://firme.domovina.ai INGEST_KEY=<prod-key> npm run bridge:enrich -- --limit 50
-  ```
+**A) Bridge gađa produkciju** (kad lokalni resolver razrješava poddomenu):
+
+```bash
+WORKER_URL=https://firme.domovina.ai INGEST_KEY=<prod-key> npm run bridge:seed -- --all
+WORKER_URL=https://firme.domovina.ai INGEST_KEY=<prod-key> npm run bridge:enrich -- --all --firecrawl
+```
+
+**B) Export lokalne D1 → import u prod** (robusno, BEZ ovisnosti o DNS-u — preko
+Cloudflare API-ja). Koristi se kad je lokalna D1 već obrađena pa samo želimo
+preslikati stanje u prod:
+
+```bash
+cd worker
+npx wrangler d1 export company_details --local --no-schema --table companies --output ./prod-load.sql
+{ echo "DELETE FROM companies;"; cat ./prod-load.sql; } > ./prod-sync.sql   # idempotentno (clear + reload)
+npx wrangler d1 execute company_details --remote --file ./prod-sync.sql
+rm -f ./prod-load.sql ./prod-sync.sql                                        # ne commitati (sadrži podatke)
+```
+
+> `--file` putanja mora biti unutar projekta (wrangler ne čita iz `/tmp`).
 
 ## Napomene
 
