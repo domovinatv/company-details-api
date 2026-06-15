@@ -25,7 +25,10 @@ export interface CompanyRow {
   legal_form: string | null;
   kind: EntityKind;
   status: Status;
+  legal_status: string | null;
+  legal_status_raw: string | null;
   size: SizeClass | null;
+  size_official: number;
   confidence: string | null;
   total_assets: number | null;
   revenue: number | null;
@@ -54,7 +57,10 @@ export interface IngestRecord {
   legal_form?: string;
   kind?: EntityKind;
   status?: Status;
+  legal_status?: string | null;
+  legal_status_raw?: string | null;
   size?: SizeClass | null;
+  size_official?: boolean;
   confidence?: string;
   total_assets?: number | null;
   revenue?: number | null;

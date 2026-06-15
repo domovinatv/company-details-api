@@ -109,6 +109,7 @@ api.get("/companies", async (c) => {
     offset,
     size: c.req.query("size") || undefined,
     status: c.req.query("status") || undefined,
+    lstatus: c.req.query("lstatus") || undefined,
     kind: c.req.query("kind") || undefined,
     q: c.req.query("q") || undefined,
   };

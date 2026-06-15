@@ -62,9 +62,11 @@ async function findUrl(fc: FirecrawlClient, input: CompanyInput): Promise<string
 
 export const sudreg: Source = {
   name: "sudreg",
+  requiresFirecrawl: true,
   // Sudski registar covers trgovačka društva (and some ustanove); not udruge/obrti.
   appliesTo: (kind) => kind === "trgovacko_drustvo" || kind === "ustanova" || kind === "nepoznato",
   async enrich(fc, input): Promise<SourceResult> {
+    if (!fc) return { source: "sudreg", warnings: ["sudreg: zahtijeva Firecrawl"] };
     const url = await findUrl(fc, input);
     if (!url) {
       return { source: "sudreg", warnings: ["sudreg: nije pronađen zapis"] };

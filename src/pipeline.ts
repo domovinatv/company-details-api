@@ -11,22 +11,26 @@
  */
 import type { FirecrawlClient } from "./firecrawl.ts";
 import { classifyRecord } from "./classify.ts";
-import { companywall, sudreg, finaRgfi, udruge } from "./sources/index.ts";
+import { infobiz, companywall, sudreg, finaRgfi, udruge } from "./sources/index.ts";
 import type { Source, SourceResult } from "./sources/index.ts";
 import type {
   CompanyInput,
   CompanyRecord,
   EntityKind,
+  SizeClass,
   SizeMetrics,
   SizeResult,
   SourceName,
   Sourced,
 } from "./types.ts";
 
-const ALL_SOURCES: Source[] = [sudreg, companywall, finaRgfi, udruge];
+// Order matters only as a stable default; appliesTo + mode filter the real set.
+const ALL_SOURCES: Source[] = [infobiz, sudreg, companywall, finaRgfi, udruge];
 
-const IDENTITY_PRIORITY: SourceName[] = ["sudreg", "companywall", "rno", "fina_rgfi"];
+const IDENTITY_PRIORITY: SourceName[] = ["sudreg_api", "fina_infobiz", "sudreg", "companywall", "rno", "fina_rgfi"];
 const METRICS_PRIORITY: SourceName[] = ["fina_rgfi", "companywall", "rno"];
+const STATUS_PRIORITY: SourceName[] = ["fina_infobiz", "sudreg_api", "sudreg", "companywall", "rno"];
+const OFFICIAL_SIZE_PRIORITY: SourceName[] = ["fina_infobiz"];
 
 function pickSourced<T>(
   results: SourceResult[],
@@ -68,22 +72,29 @@ function refineKind(seed: EntityKind, results: SourceResult[]): EntityKind {
   return fromSource ?? "nepoznato";
 }
 
+export type SourceMode = "free" | "all";
+
 export interface EnrichOptions {
   /** Pre-seeded entity kind (from the CSV legal_form), narrows which sources run. */
   seedKind?: EntityKind;
+  /** "free" = only no-credit sources (info.BIZ, official APIs); "all" = also Firecrawl. */
+  mode?: SourceMode;
 }
 
 /** Run all applicable sources for one entity and assemble its record. */
 export async function enrichOne(
-  fc: FirecrawlClient,
+  fc: FirecrawlClient | null,
   input: CompanyInput,
   opts: EnrichOptions = {},
 ): Promise<CompanyRecord> {
   const seedKind = opts.seedKind ?? "nepoznato";
+  const mode = opts.mode ?? (fc ? "all" : "free");
   const results: SourceResult[] = [];
   const warnings: string[] = [];
 
   for (const source of ALL_SOURCES) {
+    if (mode === "free" && source.requiresFirecrawl) continue;
+    if (source.requiresFirecrawl && !fc) continue;
     if (!source.appliesTo(seedKind)) continue;
     try {
       results.push(await source.enrich(fc, input));
@@ -96,6 +107,9 @@ export async function enrichOne(
 
   const kind = refineKind(seedKind, results);
   const { metrics, source: metricsSource } = mergeMetrics(results);
+  const officialSize = pickSourced<SizeClass>(results, OFFICIAL_SIZE_PRIORITY, (r) => r.officialSize);
+  const status = pickSourced(results, STATUS_PRIORITY, (r) => r.status);
+  const statusRaw = results.find((r) => STATUS_PRIORITY.includes(r.source) && r.statusRaw)?.statusRaw;
 
   const raw: Partial<Record<SourceName, unknown>> = {};
   for (const r of results) if (r.raw !== undefined) raw[r.source] = r.raw;
@@ -104,13 +118,16 @@ export async function enrichOne(
     input,
     oib: input.oib,
     kind,
-    name: pickSourced(results, IDENTITY_PRIORITY, (r) => r.name) ?? (input.name ? { value: input.name, source: "companywall" } : undefined),
+    name: pickSourced(results, IDENTITY_PRIORITY, (r) => r.name) ?? (input.name ? { value: input.name, source: "fina_infobiz" } : undefined),
     address: pickSourced(results, IDENTITY_PRIORITY, (r) => r.address),
     mbs: pickSourced(results, IDENTITY_PRIORITY, (r) => r.mbs),
     foundedYear: pickSourced(results, IDENTITY_PRIORITY, (r) => r.foundedYear),
     director: pickSourced(results, IDENTITY_PRIORITY, (r) => r.director),
     directorRole: pickSourced(results, IDENTITY_PRIORITY, (r) => r.directorRole),
     nkd: pickSourced(results, IDENTITY_PRIORITY, (r) => r.nkd),
+    status,
+    statusRaw,
+    officialSize,
     metrics,
     metricsSource,
     raw,
@@ -120,7 +137,7 @@ export async function enrichOne(
 
 /** Full pipeline for one entity: enrich + classify. */
 export async function processOne(
-  fc: FirecrawlClient,
+  fc: FirecrawlClient | null,
   input: CompanyInput,
   opts: EnrichOptions = {},
 ): Promise<{ record: CompanyRecord; result: SizeResult }> {

@@ -7,6 +7,8 @@ export interface ListFilter {
   /** size class, "udruga", "nerazvrstano", or undefined */
   size?: string;
   status?: Status | string;
+  /** legal status: aktivan|brisan|likvidacija|stecaj|… */
+  lstatus?: string;
   kind?: string;
   q?: string;
 }
@@ -21,6 +23,10 @@ function whereClause(f: ListFilter): { sql: string; binds: unknown[] } {
   if (f.kind) {
     conds.push("kind = ?");
     binds.push(f.kind);
+  }
+  if (f.lstatus) {
+    conds.push("legal_status = ?");
+    binds.push(f.lstatus);
   }
   if (f.size) {
     if (f.size === "nerazvrstano") {
@@ -131,17 +137,22 @@ export async function upsertCompany(db: D1Database, rec: IngestRecord): Promise<
           : 0;
   const enrichedAt = status === "enriched" ? now : (existing?.enriched_at ?? null);
 
+  const sizeOfficial = rec.size_official === undefined ? (existing?.size_official ?? 0) : rec.size_official ? 1 : 0;
+
   await db
     .prepare(
       `INSERT INTO companies (
-         oib, name, legal_form, kind, status, size, confidence,
+         oib, name, legal_form, kind, status, legal_status, legal_status_raw,
+         size, size_official, confidence,
          total_assets, revenue, employees, has_employees, metrics_year, metrics_source,
          address, mbs, founded_year, director, director_role, nkd, source_url,
          notes, raw, created_at, updated_at, enriched_at
-       ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?)
+       ) VALUES (?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?)
        ON CONFLICT(oib) DO UPDATE SET
          name=excluded.name, legal_form=excluded.legal_form, kind=excluded.kind,
-         status=excluded.status, size=excluded.size, confidence=excluded.confidence,
+         status=excluded.status, legal_status=excluded.legal_status,
+         legal_status_raw=excluded.legal_status_raw,
+         size=excluded.size, size_official=excluded.size_official, confidence=excluded.confidence,
          total_assets=excluded.total_assets, revenue=excluded.revenue, employees=excluded.employees,
          has_employees=excluded.has_employees, metrics_year=excluded.metrics_year,
          metrics_source=excluded.metrics_source, address=excluded.address, mbs=excluded.mbs,
@@ -156,7 +167,10 @@ export async function upsertCompany(db: D1Database, rec: IngestRecord): Promise<
       pick("legal_form", existing?.legal_form ?? null),
       pick("kind", existing?.kind ?? "nepoznato"),
       status,
+      pick("legal_status", existing?.legal_status ?? null),
+      pick("legal_status_raw", existing?.legal_status_raw ?? null),
       pick("size", existing?.size ?? null),
+      sizeOfficial,
       pick("confidence", existing?.confidence ?? null),
       pick("total_assets", existing?.total_assets ?? null),
       pick("revenue", existing?.revenue ?? null),

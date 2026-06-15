@@ -94,6 +94,8 @@ export function classifySize(m: SizeMetrics): SizeClass | null {
 export function classifyRecord(rec: CompanyRecord): SizeResult {
   const basis = basisOf(rec.metrics);
   const notes: string[] = [];
+  const status = rec.status?.value;
+  const statusRaw = rec.statusRaw;
 
   // udruge / neprofitne: nema zakonske kategorije veličine poduzetnika.
   if (rec.kind === "udruga" || rec.kind === "ustanova") {
@@ -103,6 +105,8 @@ export function classifyRecord(rec: CompanyRecord): SizeResult {
       name: rec.name?.value,
       kind: rec.kind,
       size: null,
+      status,
+      statusRaw,
       metrics: rec.metrics,
       basis,
       confidence: emp != null ? "high" : "none",
@@ -113,6 +117,33 @@ export function classifyRecord(rec: CompanyRecord): SizeResult {
         "Udruga/ustanova — ne razvrstava se po Zakonu o računovodstvu (poduzetnici); izvještava se samo broj zaposlenih.",
         ...rec.warnings,
       ],
+    };
+  }
+
+  // Official label (FINA info.BIZ "Veličina") is authoritative — trust it over
+  // anything we'd compute from scraped metrics.
+  if (rec.officialSize) {
+    const computed = classifySize(rec.metrics);
+    if (computed && computed !== rec.officialSize.value) {
+      notes.push(
+        `Napomena: izračunata veličina (${computed}) razlikuje se od službene (${rec.officialSize.value}); koristim službenu.`,
+      );
+    }
+    return {
+      oib: rec.oib,
+      name: rec.name?.value,
+      kind: rec.kind,
+      size: rec.officialSize.value,
+      sizeOfficial: true,
+      status,
+      statusRaw,
+      metrics: rec.metrics,
+      basis,
+      confidence: "high",
+      employees: rec.metrics.employees,
+      hasEmployees: rec.metrics.employees != null ? rec.metrics.employees > 0 : undefined,
+      source: rec.officialSize.source,
+      notes: [...notes, ...rec.warnings],
     };
   }
 
@@ -132,6 +163,9 @@ export function classifyRecord(rec: CompanyRecord): SizeResult {
     name: rec.name?.value,
     kind: rec.kind,
     size,
+    sizeOfficial: false,
+    status,
+    statusRaw,
     metrics: rec.metrics,
     basis,
     confidence,

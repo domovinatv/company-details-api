@@ -71,8 +71,10 @@ async function findUrl(fc: FirecrawlClient, input: CompanyInput): Promise<string
 
 export const udruge: Source = {
   name: "rno",
+  requiresFirecrawl: true,
   appliesTo: (kind) => kind === "udruga" || kind === "nepoznato",
   async enrich(fc, input): Promise<SourceResult> {
+    if (!fc) return { source: "rno", warnings: ["udruge: zahtijeva Firecrawl"] };
     const url = await findUrl(fc, input);
     if (!url) {
       return { source: "rno", warnings: ["udruge: nije pronađen zapis u registru udruga/RNO/companywall"] };

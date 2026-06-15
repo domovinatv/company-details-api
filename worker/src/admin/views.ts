@@ -68,6 +68,7 @@ h1{font-size:1.45rem;margin:0 0 .35rem;}
 .stat.s-failed{background:#F8E2E0;border-color:#F3C9C5;} .stat.s-failed .value{color:#B42318;}
 .toolbar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;}
 .toolbar input[type=search]{border:1px solid var(--border);border-radius:.4rem;padding:.45rem .7rem;font-size:.9rem;min-width:16rem;font-family:inherit;}
+.toolbar select{border:1px solid var(--border);border-radius:.4rem;padding:.45rem .6rem;font-size:.9rem;font-family:inherit;background:var(--bg);color:var(--navy);}
 .toolbar .spacer{flex:1;}
 .toolbar button{border:1px solid var(--border);background:var(--bg);border-radius:.4rem;padding:.45rem .8rem;font-size:.85rem;font-weight:600;cursor:pointer;}
 .toolbar button:hover{background:var(--surface);}
@@ -91,6 +92,13 @@ tbody tr:hover{background:var(--surface);}
 .tag.st-pending{background:#F8F3E0;border-color:#EFE3B8;color:#92760a;}
 .tag.st-enriched{background:#E0F1E5;border-color:#BFE3CC;color:#2E8540;}
 .tag.st-failed{background:#F8E2E0;border-color:#F3C9C5;color:#B42318;}
+.lst{display:inline-block;padding:.1rem .5rem;border-radius:.35rem;font-size:.72rem;font-weight:700;}
+.lst.aktivan{background:#E0F1E5;color:#2E8540;}
+.lst.brisan{background:#F8E2E0;color:#B42318;}
+.lst.likvidacija,.lst.stecaj,.lst.predstecaj{background:#FDF1E0;color:#B45309;}
+.lst.blokada{background:#F3E8FF;color:#7C3AED;}
+.lst.nepoznato,.lst.x{background:#ECEFF2;color:#5A6570;}
+.off{color:#2E8540;font-weight:700;font-size:.7rem;}
 .conf-low{color:#B45309;font-size:.72rem;font-weight:700;}
 .empty{padding:2rem;text-align:center;color:var(--muted);}
 .pager{display:flex;gap:.5rem;align-items:center;justify-content:flex-end;margin-top:.9rem;color:var(--muted);font-size:.85rem;}
@@ -123,6 +131,15 @@ export function renderGridPage(): string {
 
 <div class="toolbar">
   <input type="search" id="q" placeholder="Pretraži po nazivu ili OIB-u…" autocomplete="off">
+  <select id="lstatus">
+    <option value="">Svi pravni statusi</option>
+    <option value="aktivan">Aktivan</option>
+    <option value="brisan">Brisan</option>
+    <option value="likvidacija">U likvidaciji</option>
+    <option value="stecaj">U stečaju</option>
+    <option value="predstecaj">Predstečaj</option>
+    <option value="blokada">Blokada</option>
+  </select>
   <button id="clear">Očisti filtere</button>
   <span class="spacer"></span>
   <button id="refresh">↻ Osvježi</button>
@@ -131,11 +148,11 @@ export function renderGridPage(): string {
 <div class="table-wrap">
   <table>
     <thead><tr>
-      <th>Naziv</th><th>OIB</th><th>Vrsta</th><th>Veličina</th>
+      <th>Naziv</th><th>OIB</th><th>Vrsta</th><th>Veličina</th><th>Pravni status</th>
       <th class="num">Aktiva</th><th class="num">Prihod</th><th class="num">Zapos.</th>
-      <th>God.</th><th>Izvor</th><th>Status</th>
+      <th>God.</th><th>Izvor</th><th>Obrada</th>
     </tr></thead>
-    <tbody id="rows"><tr><td colspan="10" class="empty">Učitavanje…</td></tr></tbody>
+    <tbody id="rows"><tr><td colspan="11" class="empty">Učitavanje…</td></tr></tbody>
   </table>
 </div>
 <div class="pager">
@@ -158,15 +175,22 @@ const STAT_FILTER = {
   mikro:{size:"mikro"}, mali:{size:"mali"}, srednji:{size:"srednji"}, veliki:{size:"veliki"},
   udruga:{size:"udruga"}, nerazvrstano:{size:"nerazvrstano"}
 };
-let state = {limit:50, offset:0, q:"", filter:"ukupno"};
+let state = {limit:50, offset:0, q:"", filter:"ukupno", lstatus:""};
 const eur = n => n==null ? '<span class="dim">—</span>' : Math.round(n).toLocaleString('hr-HR')+' €';
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const LST_LABEL = {aktivan:"Aktivan",brisan:"Brisan",likvidacija:"U likvidaciji",stecaj:"U stečaju",predstecaj:"Predstečaj",blokada:"Blokada",nepoznato:"—"};
 
 function sizeCell(r){
   if(r.kind==='udruga') return '<span class="pill none">udruga</span>';
   if(!r.size) return '<span class="pill none">—</span>';
   const conf = r.confidence==='low' ? ' <span class="conf-low" title="samo 1 kriterij">!</span>' : '';
-  return '<span class="pill '+r.size+'">'+r.size+'</span>'+conf;
+  const off = r.size_official ? ' <span class="off" title="službena oznaka FINA info.BIZ">✓</span>' : '';
+  return '<span class="pill '+r.size+'">'+r.size+'</span>'+off+conf;
+}
+function lstCell(r){
+  if(!r.legal_status) return '<span class="dim">—</span>';
+  const cls = LST_LABEL[r.legal_status] ? r.legal_status : 'x';
+  return '<span class="lst '+cls+'" title="'+esc(r.legal_status_raw||'')+'">'+(LST_LABEL[r.legal_status]||esc(r.legal_status))+'</span>';
 }
 function empCell(r){
   if(r.employees!=null) return r.employees;
@@ -178,6 +202,7 @@ async function load(){
   const f = STAT_FILTER[state.filter] || {};
   const p = new URLSearchParams({limit:state.limit, offset:state.offset});
   if(state.q) p.set('q', state.q);
+  if(state.lstatus) p.set('lstatus', state.lstatus);
   for(const [k,v] of Object.entries(f)) p.set(k,v);
   const res = await fetch('/admin/api/companies?'+p.toString());
   const data = await res.json();
@@ -196,7 +221,7 @@ function renderStats(c){
 }
 function renderRows(rows){
   const tb = document.getElementById('rows');
-  if(!rows.length){tb.innerHTML='<tr><td colspan="10" class="empty">Nema rezultata.</td></tr>';return;}
+  if(!rows.length){tb.innerHTML='<tr><td colspan="11" class="empty">Nema rezultata.</td></tr>';return;}
   tb.innerHTML = rows.map(r=>{
     const name = r.source_url ? '<a href="'+esc(r.source_url)+'" target="_blank" rel="noopener">'+esc(r.name||'—')+'</a>' : esc(r.name||'—');
     return '<tr>'+
@@ -204,6 +229,7 @@ function renderRows(rows){
       '<td class="mono">'+esc(r.oib)+'</td>'+
       '<td><span class="tag">'+(KIND_LABEL[r.kind]||r.kind)+'</span></td>'+
       '<td>'+sizeCell(r)+'</td>'+
+      '<td>'+lstCell(r)+'</td>'+
       '<td class="num">'+eur(r.total_assets)+'</td>'+
       '<td class="num">'+eur(r.revenue)+'</td>'+
       '<td class="num">'+empCell(r)+'</td>'+
@@ -216,7 +242,8 @@ function renderRows(rows){
 
 let qt;
 document.getElementById('q').addEventListener('input', e=>{clearTimeout(qt);qt=setTimeout(()=>{state.q=e.target.value.trim();state.offset=0;load();},250);});
-document.getElementById('clear').onclick=()=>{state.q='';state.filter='ukupno';state.offset=0;document.getElementById('q').value='';load();};
+document.getElementById('lstatus').addEventListener('change', e=>{state.lstatus=e.target.value;state.offset=0;load();});
+document.getElementById('clear').onclick=()=>{state.q='';state.filter='ukupno';state.lstatus='';state.offset=0;document.getElementById('q').value='';document.getElementById('lstatus').value='';load();};
 document.getElementById('refresh').onclick=load;
 document.getElementById('prev').onclick=()=>{state.offset=Math.max(0,state.offset-state.limit);load();};
 document.getElementById('next').onclick=()=>{state.offset+=state.limit;load();};

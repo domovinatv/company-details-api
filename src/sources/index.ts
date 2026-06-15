@@ -5,7 +5,7 @@
  * a fatal error, and the pipeline merges whatever came back.
  */
 import type { FirecrawlClient } from "../firecrawl.ts";
-import type { CompanyInput, EntityKind, SourceName, SizeMetrics } from "../types.ts";
+import type { CompanyInput, EntityKind, SizeClass, SourceName, SizeMetrics } from "../types.ts";
 
 export interface SourceResult {
   source: SourceName;
@@ -21,6 +21,13 @@ export interface SourceResult {
   kind?: EntityKind;
   /** Size indicators this source could provide. */
   metrics?: SizeMetrics;
+  /** Official, pre-computed size class (e.g. FINA info.BIZ "Veličina") — when
+   *  present this is authoritative and beats metric-derived classification. */
+  officialSize?: SizeClass;
+  /** Normalised legal status (aktivan|brisan|likvidacija|stecaj|blokada|…). */
+  status?: string;
+  /** Raw status label as published. */
+  statusRaw?: string;
   /** Raw payload (parsed JSON / extracted object) for debugging. */
   raw?: unknown;
   /** Non-fatal issues. */
@@ -29,11 +36,14 @@ export interface SourceResult {
 
 export interface Source {
   name: SourceName;
+  /** Whether this source consumes Firecrawl credits (vs. plain fetch / API). */
+  requiresFirecrawl: boolean;
   /** True if this source is relevant for the (possibly unknown) entity kind. */
   appliesTo(kind: EntityKind): boolean;
-  enrich(fc: FirecrawlClient, input: CompanyInput): Promise<SourceResult>;
+  enrich(fc: FirecrawlClient | null, input: CompanyInput): Promise<SourceResult>;
 }
 
+export { infobiz } from "./infobiz.ts";
 export { companywall } from "./companywall.ts";
 export { sudreg } from "./sudreg.ts";
 export { finaRgfi } from "./fina_rgfi.ts";

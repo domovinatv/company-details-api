@@ -88,8 +88,10 @@ async function findUrl(fc: FirecrawlClient, input: CompanyInput): Promise<string
 
 export const companywall: Source = {
   name: "companywall",
+  requiresFirecrawl: true,
   appliesTo: () => true,
   async enrich(fc, input): Promise<SourceResult> {
+    if (!fc) return { source: "companywall", warnings: ["companywall: zahtijeva Firecrawl"] };
     const url = await findUrl(fc, input);
     if (!url) {
       return { source: "companywall", warnings: ["companywall: nije pronađen profil"] };

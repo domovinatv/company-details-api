@@ -25,6 +25,7 @@ import { FirecrawlClient } from "./firecrawl.ts";
 import { FsCache } from "./cache.ts";
 import { loadSeed } from "./csv.ts";
 import { processOne } from "./pipeline.ts";
+import { warmInfobizIndex } from "./sources/infobiz.ts";
 import type { SeedRow } from "./csv.ts";
 import type { CompanyRecord, SizeResult } from "./types.ts";
 
@@ -35,15 +36,18 @@ interface Args {
   input: string;
   limit: number;
   all: boolean;
+  firecrawl: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { input: "data/input/pravne-osobe.csv", limit: 10, all: false };
+  const a: Args = { input: "data/input/pravne-osobe.csv", limit: 10, all: false, firecrawl: false };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
       case "--input": a.input = argv[++i]!; break;
       case "--limit": a.limit = Number(argv[++i]); break;
       case "--all": a.all = true; break;
+      // Also use the credit-consuming Firecrawl sources (default is free-only).
+      case "--firecrawl": a.firecrawl = true; break;
     }
   }
   return a;
@@ -76,8 +80,11 @@ function toIngest(seed: SeedRow, rec: CompanyRecord, result: SizeResult, status:
     name: rec.name?.value ?? seed.name,
     legal_form: seed.legalForm,
     kind: rec.kind,
-    status,
+    status: status,
+    legal_status: result.status ?? null,
+    legal_status_raw: result.statusRaw ?? null,
     size: result.size,
+    size_official: result.sizeOfficial ?? false,
     confidence: result.confidence,
     total_assets: rec.metrics.totalAssets ?? null,
     revenue: rec.metrics.revenue ?? null,
@@ -118,20 +125,32 @@ async function cmdSeed(args: Args) {
 async function cmdEnrich(args: Args) {
   const seed = await loadSeed(resolve(args.input));
   const batch = args.all ? seed : seed.slice(0, args.limit);
-  const fc = new FirecrawlClient({ cache: new FsCache(resolve("data/cache")) });
-  const keyIdx = await fc.selectFundedKey(50);
-  if (keyIdx < 0) {
-    console.error("Nijedan Firecrawl ključ nema dovoljno kredita (>50).");
-    process.exit(1);
+  const mode: "free" | "all" = args.firecrawl ? "all" : "free";
+
+  let fc: FirecrawlClient | null = null;
+  if (mode === "all") {
+    fc = new FirecrawlClient({ cache: new FsCache(resolve("data/cache")) });
+    const keyIdx = await fc.selectFundedKey(50);
+    if (keyIdx < 0) {
+      console.error("Nijedan Firecrawl ključ nema dovoljno kredita (>50). (Bez --firecrawl ide besplatni način.)");
+      process.exit(1);
+    }
+  } else {
+    // Warm the info.BIZ index once and report coverage of this batch.
+    const idx = await warmInfobizIndex();
+    const hit = batch.filter((r) => idx.has(r.oib)).length;
+    console.log(`info.BIZ pokriva ${hit}/${batch.length} OIB-ova iz batcha.`);
   }
-  console.log(`Enrich: ${batch.length}/${seed.length} subjekata`);
+
+  console.log(`Enrich (${mode}): ${batch.length}/${seed.length} subjekata`);
   let n = 0;
   for (const row of batch) {
     n++;
     process.stdout.write(`[${n}/${batch.length}] ${row.name ?? row.oib} … `);
     try {
-      const { record, result } = await processOne(fc, { oib: row.oib, name: row.name }, { seedKind: row.kind });
-      console.log(result.size ?? (result.kind === "udruga" ? `udruga(zap:${result.employees ?? "?"})` : "—"));
+      const { record, result } = await processOne(fc, { oib: row.oib, name: row.name }, { seedKind: row.kind, mode });
+      const sizeStr = result.size ?? (result.kind === "udruga" ? `udruga(zap:${result.employees ?? "?"})` : "—");
+      console.log(`${sizeStr}${result.sizeOfficial ? "✓" : ""} [${result.status ?? "status:?"}]`);
       await ingest([toIngest(row, record, result, "enriched")]);
     } catch (err) {
       console.log(`GREŠKA: ${(err as Error).message}`);
@@ -143,7 +162,7 @@ async function cmdEnrich(args: Args) {
       ]);
     }
   }
-  console.log(`\nFirecrawl krediti potrošeni: ${fc.creditsUsed}`);
+  if (fc) console.log(`\nFirecrawl krediti potrošeni: ${fc.creditsUsed}`);
 }
 
 async function main() {

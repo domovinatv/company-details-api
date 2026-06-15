@@ -47,8 +47,10 @@ export interface Sourced<T> {
 }
 
 export type SourceName =
+  | "fina_infobiz"
   | "companywall"
   | "sudreg"
+  | "sudreg_api"
   | "fina_rgfi"
   | "fina_neprofitne"
   | "rno";
@@ -68,6 +70,14 @@ export interface CompanyRecord {
   directorRole?: Sourced<string>;
   nkd?: Sourced<string>; // šifra/naziv djelatnosti (NKD 2007)
 
+  /** Pravni status: aktivan|brisan|likvidacija|stecaj|predstecaj|blokada|… */
+  status?: Sourced<string>;
+  /** Raw status label as published (e.g. "U likvidaciji"). */
+  statusRaw?: string;
+
+  /** Authoritative, pre-computed size class (FINA info.BIZ) when available. */
+  officialSize?: Sourced<SizeClass>;
+
   /** Size indicators with provenance — best available across sources. */
   metrics: SizeMetrics;
   metricsSource?: SourceName;
@@ -85,6 +95,11 @@ export interface SizeResult {
   kind: EntityKind;
   /** null for udruge / when there isn't enough data to classify. */
   size: SizeClass | null;
+  /** True when `size` came from an official label (FINA info.BIZ), not computed. */
+  sizeOfficial?: boolean;
+  /** Pravni status (aktivan|brisan|likvidacija|stecaj|…). */
+  status?: string;
+  statusRaw?: string;
   metrics: SizeMetrics;
   /** Which criteria (assets/revenue/employees) were actually available. */
   basis: ("assets" | "revenue" | "employees")[];
