@@ -20,7 +20,7 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "company_details"
-database_id = "PLACEHOLDER_DATABASE_ID"
+database_id = "edcb397a-653e-492b-a606-ae4776d4139b"
 migrations_dir = "migrations"
 
 [vars]

@@ -72,13 +72,33 @@ function refineKind(seed: EntityKind, results: SourceResult[]): EntityKind {
   return fromSource ?? "nepoznato";
 }
 
-export type SourceMode = "free" | "all";
+export type SourceMode = "free" | "all" | "fallback";
 
 export interface EnrichOptions {
   /** Pre-seeded entity kind (from the CSV legal_form), narrows which sources run. */
   seedKind?: EntityKind;
-  /** "free" = only no-credit sources (info.BIZ, official APIs); "all" = also Firecrawl. */
+  /**
+   * "free"     — only no-credit sources (info.BIZ, official APIs)
+   * "all"      — free + Firecrawl always
+   * "fallback" — free first; spend Firecrawl ONLY when free didn't suffice
+   */
   mode?: SourceMode;
+}
+
+/** True when the free sources already produced enough to classify this entity,
+ *  so we can skip the credit-consuming Firecrawl scrapers. */
+function freeResultSatisfies(kind: EntityKind, results: SourceResult[]): boolean {
+  if (results.some((r) => r.officialSize)) return true;
+  if (kind === "udruga" || kind === "ustanova") {
+    return results.some((r) => r.metrics?.employees != null);
+  }
+  const fields = new Set<string>();
+  for (const r of results) {
+    if (r.metrics?.totalAssets != null) fields.add("assets");
+    if (r.metrics?.revenue != null) fields.add("revenue");
+    if (r.metrics?.employees != null) fields.add("employees");
+  }
+  return fields.size >= 2;
 }
 
 /** Run all applicable sources for one entity and assemble its record. */
@@ -88,19 +108,28 @@ export async function enrichOne(
   opts: EnrichOptions = {},
 ): Promise<CompanyRecord> {
   const seedKind = opts.seedKind ?? "nepoznato";
-  const mode = opts.mode ?? (fc ? "all" : "free");
+  const mode = opts.mode ?? (fc ? "fallback" : "free");
   const results: SourceResult[] = [];
   const warnings: string[] = [];
 
-  for (const source of ALL_SOURCES) {
-    if (mode === "free" && source.requiresFirecrawl) continue;
-    if (source.requiresFirecrawl && !fc) continue;
-    if (!source.appliesTo(seedKind)) continue;
+  const runSource = async (source: Source) => {
+    if (!source.appliesTo(seedKind)) return;
+    if (source.requiresFirecrawl && !fc) return;
     try {
       results.push(await source.enrich(fc, input));
     } catch (err) {
       warnings.push(`${source.name}: ${(err as Error).message}`);
     }
+  };
+
+  // Free (no-credit) sources first.
+  for (const source of ALL_SOURCES.filter((s) => !s.requiresFirecrawl)) await runSource(source);
+
+  // Decide whether to spend Firecrawl credits.
+  const runFirecrawl =
+    fc != null && (mode === "all" || (mode === "fallback" && !freeResultSatisfies(seedKind, results)));
+  if (runFirecrawl) {
+    for (const source of ALL_SOURCES.filter((s) => s.requiresFirecrawl)) await runSource(source);
   }
 
   for (const r of results) if (r.warnings) warnings.push(...r.warnings);

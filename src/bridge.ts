@@ -125,10 +125,11 @@ async function cmdSeed(args: Args) {
 async function cmdEnrich(args: Args) {
   const seed = await loadSeed(resolve(args.input));
   const batch = args.all ? seed : seed.slice(0, args.limit);
-  const mode: "free" | "all" = args.firecrawl ? "all" : "free";
+  // --firecrawl => "fallback": free first, spend credits only on the gaps.
+  const mode: "free" | "fallback" = args.firecrawl ? "fallback" : "free";
 
   let fc: FirecrawlClient | null = null;
-  if (mode === "all") {
+  if (mode === "fallback") {
     fc = new FirecrawlClient({ cache: new FsCache(resolve("data/cache")) });
     const keyIdx = await fc.selectFundedKey(50);
     if (keyIdx < 0) {

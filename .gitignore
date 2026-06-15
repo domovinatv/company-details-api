@@ -6,7 +6,9 @@ dist/
 
 # secrets
 .env
+.env.prod
 .dev.vars
+.prod.vars
 
 # local data — caches, inputs, outputs (never commit scraped data or credits-burning caches)
 data/cache/
