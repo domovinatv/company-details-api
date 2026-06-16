@@ -68,6 +68,9 @@ npm run bridge:enrich -- --all
 # 6b) Opcijski: nadopuna Firecrawl izvorima za ono što info.BIZ ne pokriva
 #     (troši kredite — počni s malim brojem)
 npm run bridge:enrich -- --limit 10 --firecrawl
+
+# 7) Obradi OIB-ove appendane preko v1 API-ja (status=pending u cloudu)
+WORKER_URL=https://firme.domovina.ai INGEST_KEY=<prod> npm run bridge:pending -- --all
 ```
 
 **Način rada:** `bridge:enrich` je po defaultu **free** (samo info.BIZ +

@@ -13,6 +13,7 @@
     "classify": "node --experimental-strip-types src/cli.ts",
     "bridge:seed": "node --experimental-strip-types src/bridge.ts seed",
     "bridge:enrich": "node --experimental-strip-types src/bridge.ts enrich",
+    "bridge:pending": "node --experimental-strip-types src/bridge.ts pending",
     "test": "node --experimental-strip-types --test src/**/*.test.ts"
   },
   "dependencies": {

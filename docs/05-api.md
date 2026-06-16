@@ -22,6 +22,22 @@ Body:
 - `enqueue` (default `true`) — nepoznate OIB-ove ubaci u red (status `pending`)
   da ih buduća obrada pokupi; za njih se vrati `found:false, processing:"queued"`.
 
+### Životni ciklus appendanih OIB-ova
+
+Klijent (zef.hr) može **dodati novu listu OIB-ova za analizu** samim pozivom
+`POST /api/v1/companies` — nepoznati se upišu kao `pending`. Sama analiza je
+**lokalna** (Worker ne scrapea): operater na lokalnom stroju povuče red i obradi
+ga, pa rezultat ode natrag u cloud:
+
+```bash
+npm run bridge:pending -- --all              # besplatno (info.BIZ)
+npm run bridge:pending -- --all --firecrawl  # + Firecrawl za rupe (troši kredite)
+```
+
+`bridge pending` dohvati `status=pending` iz clouda → klasificira → vrati preko
+`/api/ingest`. Klijent zatim ponovnim pozivom dobije `processing:"enriched"` +
+podatke. (Tijek: **append (cloud) → analiza (lokalno) → read 24/7 (cloud)**.)
+
 Odgovor:
 
 ```json

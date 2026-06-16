@@ -122,11 +122,10 @@ async function cmdSeed(args: Args) {
   console.log("Seed gotov.");
 }
 
-async function cmdEnrich(args: Args) {
-  const seed = await loadSeed(resolve(args.input));
-  const batch = args.all ? seed : seed.slice(0, args.limit);
+/** Shared: enrich a batch of seed rows and push results to the worker. */
+async function runBatch(batch: SeedRow[], firecrawl: boolean) {
   // --firecrawl => "fallback": free first, spend credits only on the gaps.
-  const mode: "free" | "fallback" = args.firecrawl ? "fallback" : "free";
+  const mode: "free" | "fallback" = firecrawl ? "fallback" : "free";
 
   let fc: FirecrawlClient | null = null;
   if (mode === "fallback") {
@@ -137,13 +136,12 @@ async function cmdEnrich(args: Args) {
       process.exit(1);
     }
   } else {
-    // Warm the info.BIZ index once and report coverage of this batch.
     const idx = await warmInfobizIndex();
     const hit = batch.filter((r) => idx.has(r.oib)).length;
     console.log(`info.BIZ pokriva ${hit}/${batch.length} OIB-ova iz batcha.`);
   }
 
-  console.log(`Enrich (${mode}): ${batch.length}/${seed.length} subjekata`);
+  console.log(`Enrich (${mode}): ${batch.length} subjekata`);
   let n = 0;
   for (const row of batch) {
     n++;
@@ -166,6 +164,46 @@ async function cmdEnrich(args: Args) {
   if (fc) console.log(`\nFirecrawl krediti potrošeni: ${fc.creditsUsed}`);
 }
 
+async function cmdEnrich(args: Args) {
+  const seed = await loadSeed(resolve(args.input));
+  const batch = args.all ? seed : seed.slice(0, args.limit);
+  await runBatch(batch, args.firecrawl);
+}
+
+/** Pull OIBs queued in the cloud (status=pending) — these arrived via the v1 API
+ *  (e.g. zef.hr appended a list). Closes the append→analyze loop. */
+async function fetchPending(max: number): Promise<SeedRow[]> {
+  const out: SeedRow[] = [];
+  let offset = 0;
+  while (out.length < max) {
+    const res = await fetch(`${WORKER_URL}/api/companies?status=pending&limit=500&offset=${offset}`);
+    if (!res.ok) throw new Error(`pending fetch ${res.status}: ${(await res.text()).slice(0, 150)}`);
+    const d = (await res.json()) as { companies?: Array<Record<string, unknown>>; total?: number };
+    const rows = d.companies ?? [];
+    for (const c of rows) {
+      out.push({
+        oib: String(c.oib),
+        name: (c.name as string) ?? undefined,
+        kind: (c.kind as SeedRow["kind"]) ?? "nepoznato",
+        legalForm: (c.legal_form as string) ?? "",
+      });
+    }
+    offset += 500;
+    if (rows.length === 0 || offset >= (d.total ?? 0)) break;
+  }
+  return Number.isFinite(max) ? out.slice(0, max) : out;
+}
+
+async function cmdPending(args: Args) {
+  const batch = await fetchPending(args.all ? Infinity : args.limit);
+  if (batch.length === 0) {
+    console.log(`Nema pending subjekata u cloudu (${WORKER_URL}).`);
+    return;
+  }
+  console.log(`Pending iz ${WORKER_URL}: ${batch.length} subjekata za obradu`);
+  await runBatch(batch, args.firecrawl);
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const args = parseArgs(rest);
@@ -176,8 +214,9 @@ async function main() {
   switch (cmd) {
     case "seed": return cmdSeed(args);
     case "enrich": return cmdEnrich(args);
+    case "pending": return cmdPending(args);
     default:
-      console.error("Koristi: bridge.ts <seed|enrich> [--input csv] [--limit N|--all]");
+      console.error("Koristi: bridge.ts <seed|enrich|pending> [--input csv] [--limit N|--all] [--firecrawl]");
       process.exit(1);
   }
 }
